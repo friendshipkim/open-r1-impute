@@ -2,6 +2,11 @@
 
 *A fully open reproduction of DeepSeek-R1. This repo is a work in progress, let's build it together!*
 
+## Todo (Woojeong)
+- [ ] add qrm reward
+- [ ] output reward matrix
+- [ ] fix wandb logging
+
 **Table of Contents**  
 1. [Overview](#overview)  
 2. [Plan of attack](#plan-of-attack)  
