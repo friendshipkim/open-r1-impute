@@ -400,3 +400,8 @@ def get_code_format_reward(language: str = "python"):
         return [1.0 if match else 0.0 for match in matches]
 
     return code_format_reward
+
+def qrm_reward(completions, solution, **kwargs):
+    """Reward function that checks if the completion is the same as the ground truth."""
+    
+    return

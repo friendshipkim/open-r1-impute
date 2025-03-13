@@ -33,6 +33,7 @@ from open_r1.rewards import (
     get_cosine_scaled_reward,
     get_repetition_penalty_reward,
     len_reward,
+    qrm_reward,
     reasoning_steps_reward,
     tag_count_reward,
 )
@@ -108,6 +109,10 @@ class GRPOScriptArguments(ScriptArguments):
             "choices": ["python", "javascript", "r", "java", "bash"],
         },
     )
+    num_proc: int = field(
+        default=16,
+        metadata={"help": "Number of processes for dataset mapping"},
+    )
 
 
 def main(script_args, training_args, model_args):
@@ -176,6 +181,7 @@ def main(script_args, training_args, model_args):
         "code": code_reward,
         "code_format": get_code_format_reward(language=script_args.code_language),
         "tag_count": tag_count_reward,
+        "qrm": qrm_reward,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
 
@@ -188,12 +194,23 @@ def main(script_args, training_args, model_args):
 
         prompt.append({"role": "user", "content": example["problem"]})
         return {"prompt": prompt}
+    
+    # Format into conversation
+    def make_conversation_ultrachat(example):
+        prompt = []
 
-    dataset = dataset.map(make_conversation)
+        if training_args.system_prompt is not None:
+            prompt.append({"role": "system", "content": training_args.system_prompt})
 
-    for split in dataset:
-        if "messages" in dataset[split].column_names:
-            dataset[split] = dataset[split].remove_columns("messages")
+        prompt.append({"role": "user", "content": example["prompt"]})
+        return {"prompt": prompt}
+
+    preprocess_func = make_conversation_ultrachat if 'ultrachat' in script_args.dataset_name else make_conversation
+    train_dataset = dataset[script_args.dataset_train_split].map(preprocess_func, num_proc=script_args.num_proc)
+    test_dataset = dataset[script_args.dataset_test_split].map(preprocess_func, num_proc=script_args.num_proc)
+
+    if "messages" in train_dataset.column_names:
+        train_dataset = train_dataset.remove_columns("messages")
 
     logger.info("*** Initializing model kwargs ***")
     torch_dtype = (
@@ -215,8 +232,8 @@ def main(script_args, training_args, model_args):
         model=model_args.model_name_or_path,
         reward_funcs=reward_funcs,
         args=training_args,
-        train_dataset=dataset[script_args.dataset_train_split],
-        eval_dataset=dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None,
+        train_dataset=train_dataset,
+        eval_dataset=test_dataset if training_args.eval_strategy != "no" else None,
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
