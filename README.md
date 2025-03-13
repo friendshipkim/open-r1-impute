@@ -7,6 +7,9 @@
 - [ ] output reward matrix
 - [ ] fix wandb logging
 
+## Todo (Kyuseong)
+- [ ] add experimental setup
+
 **Table of Contents**  
 1. [Overview](#overview)  
 2. [Plan of attack](#plan-of-attack)  
