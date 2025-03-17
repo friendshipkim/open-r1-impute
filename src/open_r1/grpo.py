@@ -40,7 +40,8 @@ from open_r1.rewards import (
 from open_r1.utils import get_tokenizer
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
-from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
+from open_r1.grpo_trainer import GRPOTrainer
+from trl import ModelConfig, ScriptArguments, TrlParser, get_peft_config
 
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ class GRPOScriptArguments(ScriptArguments):
     """
 
     reward_funcs: list[str] = field(
-        default_factory=lambda: ["accuracy", "format", "tag_count"],
+        default_factory=lambda: ["accuracy", "format", "tag_count", "qrm"],
         metadata={
             "help": "List of reward functions. Possible values: 'accuracy', 'format', 'format_deepseek', 'reasoning_steps', 'cosine', 'repetition_penalty', 'length', tag_count', 'code', 'code_format'"
         },
@@ -181,7 +182,7 @@ def main(script_args, training_args, model_args):
         "code": code_reward,
         "code_format": get_code_format_reward(language=script_args.code_language),
         "tag_count": tag_count_reward,
-        "qrm": qrm_reward,
+        "qrm": "nicolinho/QRM-Llama3.1-8B-v2",  # qrm_reward,
     }
     reward_funcs = [REWARD_FUNCS_REGISTRY[func] for func in script_args.reward_funcs]
 
@@ -222,6 +223,7 @@ def main(script_args, training_args, model_args):
         attn_implementation=model_args.attn_implementation,
         torch_dtype=torch_dtype,
         use_cache=False if training_args.gradient_checkpointing else True,
+        device_map="cuda",
     )
     training_args.model_init_kwargs = model_kwargs
 

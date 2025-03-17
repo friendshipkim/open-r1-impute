@@ -50,6 +50,7 @@ class GRPOConfig(trl.GRPOConfig):
         default=None,
         metadata={"help": ("The project to store runs under.")},
     )
+    reward_record_window: int = field(default=100, metadata={"help": "The number of steps to record reward outputs."})
 
 
 @dataclass

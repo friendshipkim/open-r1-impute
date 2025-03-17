@@ -3,8 +3,8 @@
 *A fully open reproduction of DeepSeek-R1. This repo is a work in progress, let's build it together!*
 
 ## Todo (Woojeong)
-- [ ] add qrm reward
-- [ ] output reward matrix
+- [x] add qrm reward
+- [x] output reward matrix
 - [ ] fix wandb logging
 
 ## Todo (Kyuseong)
