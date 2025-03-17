@@ -707,8 +707,8 @@ class GRPOTrainer(Trainer):
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         
         # if global step is at the end of the reward record window, save the reward outputs
-        print(f"Global step: {self.state.global_step} reached reward record window")
-        if self.state.global_step % self.args.reward_record_window == 0:
+        if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
+            print(f"Global step: {self.state.global_step} reached reward record window")
             self.save_reward_outputs()
             exit()
 
