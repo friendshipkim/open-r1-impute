@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import os
+import pickle
+import numpy as np
 import textwrap
 import warnings
 from collections import defaultdict
@@ -539,20 +541,65 @@ class GRPOTrainer(Trainer):
         self.reward_outputs = []
         self.reward_outputs_dir = "reward_outputs"
         os.makedirs(self.reward_outputs_dir, exist_ok=True)
-        effective_batch_size = (
-            self.args.per_device_train_batch_size
+        # Get dimensions that are constant across all steps
+        self.num_prompts_per_batch = (
+            self.args.gradient_accumulation_steps
             * self.accelerator.num_processes
-            * self.args.gradient_accumulation_steps
+            * (self.args.per_device_train_batch_size // self.args.num_generations)
         )
+        self.num_generations_per_prompt = self.args.num_generations
         policy_name = self.model.config._name_or_path.split("/")[-1]
         reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
-        self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_bsz{effective_batch_size}_gen{self.num_generations}_seed{self.args.seed}.pkl"
+        self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
 
     def save_reward_outputs(self):
-        import pickle
         print(f"Saving reward outputs to {self.reward_outputs_filename}")
+        
+        # Group reward outputs by step
+        step_to_outputs = {}
+        for output in self.reward_outputs:
+            step = output["step"]
+            if step not in step_to_outputs:
+                step_to_outputs[step] = []
+            step_to_outputs[step].append(output)
+        
+        # Merge outputs for each step
+        merged_outputs = []
+        for step, outputs in step_to_outputs.items():
+            # Find max sequence length across all batches
+            max_seq_len = max(o["input_ids"].shape[1] for o in outputs)
+            
+            # Pad and concatenate input_ids
+            padded_input_ids = []
+            for o in outputs:
+                curr_seq_len = o["input_ids"].shape[1]
+                if curr_seq_len < max_seq_len:
+                    padding = np.zeros((o["input_ids"].shape[0], max_seq_len - curr_seq_len), dtype=o["input_ids"].dtype)
+                    padded = np.concatenate([o["input_ids"], padding], axis=1)
+                else:
+                    padded = o["input_ids"]
+                padded_input_ids.append(padded)
+            input_ids = np.concatenate(padded_input_ids, axis=0)
+            
+            # Concatenate other arrays (these should have consistent shapes)
+            reward_quantiles = np.concatenate([o["reward_quantiles"] for o in outputs], axis=0)
+            reward_detailed = np.concatenate([o["reward_detailed"] for o in outputs], axis=0)
+            reward_aggregated = np.concatenate([o["reward_aggregated"] for o in outputs], axis=0)
+            hidden_states = np.concatenate([o["hidden_states"] for o in outputs], axis=0)
+            
+            # Reshape to (num_prompts_per_batch, num_generations_per_prompt, *)
+            merged = {
+                "step": step,
+                "input_ids": input_ids.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
+                "reward_quantiles": reward_quantiles.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
+                "reward_detailed": reward_detailed.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
+                "reward_aggregated": reward_aggregated.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt),
+                "hidden_states": hidden_states.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
+            }
+            merged_outputs.append(merged)
+            
         with open(self.reward_outputs_filename, "wb") as f:
-            pickle.dump(self.reward_outputs, f)
+            pickle.dump(merged_outputs, f)
         self.reward_outputs = []
     
     def _set_signature_columns_if_needed(self):
