@@ -537,6 +537,11 @@ class GRPOTrainer(Trainer):
             if isinstance(reward_func, PreTrainedModel):
                 self.reward_funcs[i] = self.accelerator.prepare_model(reward_func, evaluation_mode=True)
                     
+        # save policy outputs
+        self.policy_outputs = []
+        self.policy_outputs_dir = "policy_outputs"
+        os.makedirs(self.policy_outputs_dir, exist_ok=True)
+        
         # save reward outputs
         self.reward_outputs = []
         self.reward_outputs_dir = "reward_outputs"
@@ -551,6 +556,7 @@ class GRPOTrainer(Trainer):
         policy_name = self.model.config._name_or_path.split("/")[-1]
         reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
         self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
+        self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
 
     def save_reward_outputs(self):
         print(f"Saving reward outputs to {self.reward_outputs_filename}")
@@ -601,6 +607,11 @@ class GRPOTrainer(Trainer):
         with open(self.reward_outputs_filename, "wb") as f:
             pickle.dump(merged_outputs, f)
         self.reward_outputs = []
+    
+    def save_policy_outputs(self):
+        print(f"Saving policy outputs to {self.policy_outputs_filename}")
+        with open(self.policy_outputs_filename, "wb") as f:
+            pickle.dump(self.policy_outputs, f)
     
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -800,11 +811,61 @@ class GRPOTrainer(Trainer):
             completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         else:
+            # # Set output_hidden_states=True and output_scores=True to get perplexity info
+            #     outputs = unwrapped_model.generate(
+            #         prompt_ids, 
+            #         attention_mask=prompt_mask, 
+            #         generation_config=self.generation_config,
+            #         output_hidden_states=True,  # Get hidden states
+            #         output_scores=True,         # Get scores for perplexity
+            #         return_dict_in_generate=True  # Return as dict for easier access
+            #     )
+                
+            #     # Extract generated sequence
+            #     prompt_completion_ids = outputs.sequences
+                
+            #     # # Get hidden states from the last layer and scores
+            #     # hidden_states = outputs.hidden_states[-1][-1]  # Shape: (batch_size, sequence_length, hidden_size)
+            #     # scores = torch.stack(outputs.scores, dim=1)  # Shape: (batch_size, sequence_length, vocab_size)
+            #     # log_probs = torch.log_softmax(scores, dim=-1)
+            #     # token_perplexities = torch.exp(-log_probs.max(dim=-1)[0])  # Shape: (batch_size, sequence_length)
+            #     # mean_perplexity = token_perplexities.mean().item()
+                
+            #     # # Save policy model outputs
+            #     # breakpoint()
+            #     # policy_output = {
+            #     #     "step": self.state.global_step,
+            #     #     "hidden_states": hidden_states.detach().cpu().float().numpy(),
+            #     #     "scores": scores.detach().cpu().float().numpy(),
+            #     #     "log_probs": log_probs.detach().cpu().float().numpy(),
+            #     #     "token_perplexities": token_perplexities.detach().cpu().float().numpy(),
+            #     #     "mean_perplexity": mean_perplexity,
+            #     #     "input_ids": prompt_completion_ids.detach().cpu().numpy()
+            #     # }
+            #     # self.policy_outputs.append(policy_output)
+            #     # breakpoint()
+                
+            #     # # Still keep metrics for logging
+            #     # mode = "eval" if self.control.should_evaluate else "train"
+            #     # self._metrics[mode]["perplexity"].append(mean_perplexity)
+            #     # self._metrics[mode]["hidden_states"].append(hidden_states.detach().cpu().numpy())
+
+            #     # If we've reached the window size, save and clear policy outputs
+            #     if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
+            #         self.save_policy_outputs()
+            #         self.policy_outputs = []
+                    
             # Regular generation path
             with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
-                prompt_completion_ids = unwrapped_model.generate(
-                    prompt_ids, attention_mask=prompt_mask, generation_config=self.generation_config
+                outputs = unwrapped_model.generate(
+                    prompt_ids, 
+                    attention_mask=prompt_mask, 
+                    generation_config=self.generation_config,
+                    output_hidden_states=True,  # Get hidden states
+                    output_scores=True,         # Get scores for perplexity
+                    return_dict_in_generate=True  # Return as dict for easier access
                 )
+                prompt_completion_ids = outputs.sequences
 
             # Compute prompt length and extract completion ids
             prompt_length = prompt_ids.size(1)
