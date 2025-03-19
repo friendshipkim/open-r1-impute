@@ -896,11 +896,17 @@ class GRPOTrainer(Trainer):
                 "hidden_states": generation_hidden_states.detach().cpu().float().numpy(),
                 "perplexity": perplexity.detach().cpu().float().numpy(),
             })
+            
+            # Clear any remaining intermediate tensors
+            del generation_hidden_states, completion_mask, token_log_probs, masked_log_probs, mean_log_probs, perplexity
+            torch.cuda.empty_cache()
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
         eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
         eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
+        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
+        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
 
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B, P+C)
