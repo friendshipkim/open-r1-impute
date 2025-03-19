@@ -610,8 +610,30 @@ class GRPOTrainer(Trainer):
     
     def save_policy_outputs(self):
         print(f"Saving policy outputs to {self.policy_outputs_filename}")
+        # Group reward outputs by step
+        step_to_outputs = {}
+        for output in self.policy_outputs:
+            step = output["step"]
+            if step not in step_to_outputs:
+                step_to_outputs[step] = []
+            step_to_outputs[step].append(output)
+        
+        merged_outputs = []
+        for step, outputs in step_to_outputs.items():
+            # Concatenate other arrays (these should have consistent shapes)
+            hidden_states = np.concatenate([o["hidden_states"] for o in outputs], axis=0)
+            perplexity = np.concatenate([o["perplexity"] for o in outputs], axis=0)
+            
+            # Reshape to (num_prompts_per_batch, num_generations_per_prompt, *)
+            merged = {
+                "step": step,
+                "perplexity": perplexity.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt),
+                "hidden_states": hidden_states.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
+            }
+            merged_outputs.append(merged)
+
         with open(self.policy_outputs_filename, "wb") as f:
-            pickle.dump(self.policy_outputs, f)
+            pickle.dump(merged_outputs, f)
     
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -768,6 +790,7 @@ class GRPOTrainer(Trainer):
         if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
             print(f"Global step: {self.state.global_step} reached reward record window")
             self.save_reward_outputs()
+            self.save_policy_outputs()
             exit()
 
         if self.max_prompt_length is not None:
@@ -811,50 +834,6 @@ class GRPOTrainer(Trainer):
             completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         else:
-            # # Set output_hidden_states=True and output_scores=True to get perplexity info
-            #     outputs = unwrapped_model.generate(
-            #         prompt_ids, 
-            #         attention_mask=prompt_mask, 
-            #         generation_config=self.generation_config,
-            #         output_hidden_states=True,  # Get hidden states
-            #         output_scores=True,         # Get scores for perplexity
-            #         return_dict_in_generate=True  # Return as dict for easier access
-            #     )
-                
-            #     # Extract generated sequence
-            #     prompt_completion_ids = outputs.sequences
-                
-            #     # # Get hidden states from the last layer and scores
-            #     # hidden_states = outputs.hidden_states[-1][-1]  # Shape: (batch_size, sequence_length, hidden_size)
-            #     # scores = torch.stack(outputs.scores, dim=1)  # Shape: (batch_size, sequence_length, vocab_size)
-            #     # log_probs = torch.log_softmax(scores, dim=-1)
-            #     # token_perplexities = torch.exp(-log_probs.max(dim=-1)[0])  # Shape: (batch_size, sequence_length)
-            #     # mean_perplexity = token_perplexities.mean().item()
-                
-            #     # # Save policy model outputs
-            #     # breakpoint()
-            #     # policy_output = {
-            #     #     "step": self.state.global_step,
-            #     #     "hidden_states": hidden_states.detach().cpu().float().numpy(),
-            #     #     "scores": scores.detach().cpu().float().numpy(),
-            #     #     "log_probs": log_probs.detach().cpu().float().numpy(),
-            #     #     "token_perplexities": token_perplexities.detach().cpu().float().numpy(),
-            #     #     "mean_perplexity": mean_perplexity,
-            #     #     "input_ids": prompt_completion_ids.detach().cpu().numpy()
-            #     # }
-            #     # self.policy_outputs.append(policy_output)
-            #     # breakpoint()
-                
-            #     # # Still keep metrics for logging
-            #     # mode = "eval" if self.control.should_evaluate else "train"
-            #     # self._metrics[mode]["perplexity"].append(mean_perplexity)
-            #     # self._metrics[mode]["hidden_states"].append(hidden_states.detach().cpu().numpy())
-
-            #     # If we've reached the window size, save and clear policy outputs
-            #     if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
-            #         self.save_policy_outputs()
-            #         self.policy_outputs = []
-                    
             # Regular generation path
             with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
                 outputs = unwrapped_model.generate(
@@ -871,13 +850,57 @@ class GRPOTrainer(Trainer):
             prompt_length = prompt_ids.size(1)
             prompt_ids = prompt_completion_ids[:, :prompt_length]
             completion_ids = prompt_completion_ids[:, prompt_length:]
+            
+            # Hidden states ========================================================
+            # Skip first tuple (prompt) and get last layer for each generation step
+            generation_hidden_states = [step_hidden_states[-1] for step_hidden_states in outputs.hidden_states[1:]]
+            
+            # Stack all generation steps together
+            # [batch_size, num_gen_steps, hidden_dim]
+            generation_hidden_states = torch.stack(generation_hidden_states, dim=1).squeeze(2)
+            
+            # attention mask for completion_ids
+            # [batch_size, num_gen_steps
+            completion_mask = (completion_ids != self.processing_class.pad_token_id).int()
+            # no hidden states for the last token
+            completion_mask_no_last_token = completion_mask[:, :-1].unsqueeze(-1)
+            # zero out padding tokens, no hidden states for the last token
+            generation_hidden_states = generation_hidden_states * completion_mask_no_last_token
+            
+            # mean pool across the sequence
+            generation_hidden_states = generation_hidden_states.sum(dim=1) / completion_mask_no_last_token.sum(dim=1)
+            
+            # Logits ==============================================================
+            # Stack scores across generation steps
+            scores = torch.stack(outputs.scores, dim=1)  # [batch_size, num_gen_steps, vocab_size]
+            
+            # Compute log probabilities
+            log_probs = torch.log_softmax(scores, dim=-1)  # [batch_size, num_gen_steps, vocab_size]
+            
+            # Get the log prob of each generated token
+            assert completion_ids.size(1) == log_probs.size(1)
+            token_log_probs = torch.gather(log_probs, -1, completion_ids.unsqueeze(-1)).squeeze(-1)  # [batch_size, num_gen_steps]
+            token_log_probs = torch.nan_to_num(token_log_probs, nan=0.0)
+            
+            # Mask out padding tokens
+            masked_log_probs = token_log_probs * completion_mask
+
+            # Compute perplexity per sequence: exp(-mean(log_probs))
+            # Sum log probs and divide by number of tokens (excluding padding)
+            mean_log_probs = masked_log_probs.sum(dim=1) / completion_mask.sum(dim=1)
+            perplexity = torch.exp(-mean_log_probs)  # [batch_size]
+            
+            # Save to policy outputs
+            self.policy_outputs.append({
+                "step": self.state.global_step,
+                "hidden_states": generation_hidden_states.detach().cpu().float().numpy(),
+                "perplexity": perplexity.detach().cpu().float().numpy(),
+            })
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
         eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
         eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
-        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
-        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
 
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B, P+C)
