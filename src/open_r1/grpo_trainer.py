@@ -786,7 +786,7 @@ class GRPOTrainer(Trainer):
         prompt_inputs = super()._prepare_inputs(prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         
-        # if global step is at the end of the reward record window, save the reward outputs
+        # if global step is at the end of the reward record window, save the reward and policy outputs
         if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
             print(f"Global step: {self.state.global_step} reached reward record window")
             self.save_reward_outputs()
@@ -834,7 +834,7 @@ class GRPOTrainer(Trainer):
             completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         else:
-            # Regular generation path
+            # Regular generation path (not using vLLM -- to generate hidden states and scores)
             with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
                 outputs = unwrapped_model.generate(
                     prompt_ids, 
@@ -890,6 +890,10 @@ class GRPOTrainer(Trainer):
             mean_log_probs = masked_log_probs.sum(dim=1) / completion_mask.sum(dim=1)
             perplexity = torch.exp(-mean_log_probs)  # [batch_size]
             
+            # Training features for regression (both normalized and not normalized) before concatentation of the new hidden states
+            hidden_states_train = hidden_states_history
+            hidden_states_norm_train = hidden_states_norm_history
+
             # Save to policy outputs
             self.policy_outputs.append({
                 "step": self.state.global_step,
@@ -897,9 +901,21 @@ class GRPOTrainer(Trainer):
                 "perplexity": perplexity.detach().cpu().float().numpy(),
             })
             
+            # Test features for regression (both normalized and not normalized) used to generate the imputed rewards
+            hidden_states_test = generation_hidden_states.detach().cpu().float().numpy()
+            hidden_states_test = hidden_states_test.reshape(-1, *hidden_states_test.shape[2:])
+            hidden_states_test_mean, hidden_states_test_std = np.mean(hidden_states_test, axis=0), np.std(hidden_states_test, axis=0)
+            hidden_states_test_norm = (hidden_states_test - hidden_states_test_mean) / hidden_states_test_std
+
+            # Concatentate the new hidden states (both normalized and not normalized) with corresponding history
+            hidden_states_history = np.concatenate([hidden_states_history, hidden_states_test], axis=0)
+            hidden_states_norm_history = np.concatenate([hidden_states_norm_history, hidden_states_test_norm], axis=0)
+
             # Clear any remaining intermediate tensors
             del generation_hidden_states, completion_mask, token_log_probs, masked_log_probs, mean_log_probs, perplexity
             torch.cuda.empty_cache()
+            #Question @ Woojeong: Do we need to clear the cache for hidden states test/train?
+
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
@@ -954,7 +970,7 @@ class GRPOTrainer(Trainer):
                     messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
                     texts = [apply_chat_template(x, reward_processing_class)["text"] for x in messages]
                 else:
-                    texts = [p + c for p, c in zip(prompts, completions)]
+                    texts = [p + c for p, c in zip(prompts, completions)] # (p, o) pair 
                 reward_inputs = reward_processing_class(
                     texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
                 )
@@ -962,8 +978,31 @@ class GRPOTrainer(Trainer):
                 with torch.inference_mode():
                     # outputs.logits = outputs.score
                     outputs = reward_func(**reward_inputs)
-                    rewards_per_func[:, i] = outputs.logits[:, 0]  # Shape (B*G,)
+                    rewards_per_func[:, i] = outputs.logits[:, 0]  # Shape (B*G,) # the rewards that are fed into the objective function, so the imputed rewards should be stored in the same place
                     
+
+                    #TODO: Need to add regression based reward here, then implement patching according to the rho parameter.
+
+                    #Need to retrieve the policy outputs for the past steps, which is stored in self.policy_outputs
+                    #X = self.policy_outputs['hidden states'] -- probably need to exclude the last appended data point for it to be a training data 
+
+                    #Need to retrieve the reward outputs for the past steps, which is stored in self.reward_outputs
+                    #Y = self.reward_outputs['reward_aggregated']
+
+                    #model_agg = LinearRegression()
+                    #model_agg_norm.fit(X, Y)
+
+                    #TODO: add a parameter to control the starting point of the patching 
+                    #e.g. start_patch=100 means that you only attin hat{beta} after 100 training steps
+
+                    #TODO: add a parameter to choose whether the regression is offline or online
+                    #offline: use data points only up to start_patch as training data
+                    #online: starting from start_patch, update the regression model using the latest data
+
+                    #TODO: add normalized outputs (both for policy and reward)
+                    #TODO: option for normalizing rewards and the hidden states
+
+
                     # save reward outputs
                     outputs = {
                         "step": self.state.global_step,
@@ -973,7 +1012,14 @@ class GRPOTrainer(Trainer):
                         "reward_aggregated": outputs.score[:, 0].cpu().float().numpy(),
                         "hidden_states": outputs.hidden_state.cpu().float().numpy(),
                     }
+
+                    # save imputed rewards (for now only the aggregated reward is saved)
+                    # outputs_imputed = {
+                    #     "step": self.state.global_step,
+                    #     "reward_aggregated": outputs.score[:, 0].cpu().float().numpy(),
+                    # }
                     self.reward_outputs.append(outputs)
+                    self.reward_outputs_imputed.append(outputs_imputed)
             else:
                 # Repeat all input columns (but "prompt" and "completion") to match the number of generations
                 keys = [key for key in inputs[0] if key not in ["prompt", "completion"]]

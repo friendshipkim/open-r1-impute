@@ -114,6 +114,7 @@ class GRPOScriptArguments(ScriptArguments):
         default=16,
         metadata={"help": "Number of processes for dataset mapping"},
     )
+    #TODO: add the new arguments, e.g. start_patch, online, patch, rho, etc.
 
 
 def main(script_args, training_args, model_args):
@@ -239,6 +240,8 @@ def main(script_args, training_args, model_args):
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
+        patch=True, # Patch via oracle (i.e. true reward)
+        rho=0.0 # Patching rate 
     )
 
     ###############
