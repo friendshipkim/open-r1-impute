@@ -264,6 +264,7 @@ class GRPOTrainer(Trainer):
         callbacks: Optional[list[TrainerCallback]] = None,
         optimizers: tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LambdaLR]] = (None, None),
         peft_config: Optional["PeftConfig"] = None,
+        start_patch: int = -1,
     ):
         # Args
         if args is None:
@@ -557,6 +558,11 @@ class GRPOTrainer(Trainer):
         reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
         self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
         self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
+        
+        # for reward imputation
+        self.start_patch = start_patch
+        from open_r1.impute_utils import RewardImputation
+        self.rhat_model = RewardImputation(self.start_patch)
 
     def save_reward_outputs(self):
         print(f"Saving reward outputs to {self.reward_outputs_filename}")
@@ -786,12 +792,16 @@ class GRPOTrainer(Trainer):
         prompt_inputs = super()._prepare_inputs(prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         
-        # if global step is at the end of the reward record window, save the reward and policy outputs
-        if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
-            print(f"Global step: {self.state.global_step} reached reward record window")
-            self.save_reward_outputs()
-            self.save_policy_outputs()
-            exit()
+        # # if global step is at the end of the reward record window, save the reward and policy outputs
+        # if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
+        #     print(f"Global step: {self.state.global_step} reached reward record window")
+        #     self.save_reward_outputs()
+        #     self.save_policy_outputs()
+        #     exit()  
+
+        if self.state.global_step >= self.start_patch:
+            print(f"Global step: {self.state.global_step} reached start reward imputation")
+            self.rhat_model.train(self.policy_outputs, self.reward_outputs)
 
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]

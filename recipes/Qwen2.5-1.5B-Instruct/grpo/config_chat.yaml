@@ -14,7 +14,7 @@ use_vllm: true
 vllm_device: auto
 vllm_gpu_memory_utilization: 0.7
 do_eval: false
-gradient_accumulation_steps: 32
+gradient_accumulation_steps: 2
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
@@ -50,6 +50,7 @@ warmup_ratio: 0.1
 dataset_train_split: train_sft
 dataset_test_split: test_sft
 trust_remote_code: true
-reward_record_window: 100
+reward_record_window: 2
 wandb_project: reward-impute
 use_vllm: false
+start_patch: 1

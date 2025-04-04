@@ -114,6 +114,10 @@ class GRPOScriptArguments(ScriptArguments):
         default=16,
         metadata={"help": "Number of processes for dataset mapping"},
     )
+    start_patch: int = field(
+        default=-1,
+        metadata={"help": "Start reward imputation at this global step, -1 means no reward imputation"},
+    )
     #TODO: add the new arguments, e.g. start_patch, online, patch, rho, etc.
 
 
@@ -240,8 +244,7 @@ def main(script_args, training_args, model_args):
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
-        patch=True, # Patch via oracle (i.e. true reward)
-        rho=0.0 # Patching rate 
+        start_patch=script_args.start_patch,
     )
 
     ###############
