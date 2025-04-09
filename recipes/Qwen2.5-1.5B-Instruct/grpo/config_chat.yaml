@@ -32,7 +32,7 @@ max_completion_length: 1024
 max_steps: -1
 num_generations: 8
 num_train_epochs: 1
-output_dir: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts200-ps100-rho-1
+output_dir: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-ps100-rho0
 overwrite_output_dir: true
 per_device_eval_batch_size: 32
 per_device_train_batch_size: 8
@@ -43,16 +43,17 @@ reward_funcs:
 - qrm
 reward_weights:
 - 1.0
-save_strategy: "epoch"
+save_strategy: "steps"
+save_steps: 300
 save_total_limit: 1
 seed: 42
 warmup_ratio: 0.1
 dataset_train_split: train_sft
 dataset_test_split: test_sft
 trust_remote_code: true
-reward_record_window: 200
+reward_record_window: 301
 # max_steps: 200
 wandb_project: reward-impute
 use_vllm: false
 start_patch: 100
-rho: -1
+rho: 0

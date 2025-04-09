@@ -555,8 +555,10 @@ class GRPOTrainer(Trainer):
         self.num_generations_per_prompt = self.args.num_generations
         policy_name = self.model.config._name_or_path.split("/")[-1]
         reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
-        self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
-        self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
+        # self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
+        # self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
+        self.reward_outputs_filename = os.path.join(self.reward_outputs_dir, self.args.output_dir)
+        self.policy_outputs_filename = os.path.join(self.policy_outputs_dir, self.args.output_dir)
         
         # for reward imputation
         self.start_patch = self.args.start_patch
@@ -597,7 +599,7 @@ class GRPOTrainer(Trainer):
             reward_detailed = np.concatenate([o["reward_detailed"] for o in outputs], axis=0)
             reward_aggregated = np.concatenate([o["reward_aggregated"] for o in outputs], axis=0)
             hidden_states = np.concatenate([o["hidden_states"] for o in outputs], axis=0)
-            
+            imputed_rewards = np.concatenate([o["imputed_rewards"] for o in outputs], axis=0)
             # Reshape to (num_prompts_per_batch, num_generations_per_prompt, *)
             merged = {
                 "step": step,
@@ -605,15 +607,27 @@ class GRPOTrainer(Trainer):
                 "reward_quantiles": reward_quantiles.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
                 "reward_detailed": reward_detailed.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
                 "reward_aggregated": reward_aggregated.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt),
-                "hidden_states": hidden_states.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
+                "hidden_states": hidden_states.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
+                "imputed_rewards": imputed_rewards.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
             }
             merged_outputs.append(merged)
             
+        # save and flush
         self.reward_outputs = merged_outputs
         if save_to_disk:
             print(f"Saving reward outputs to {self.reward_outputs_filename}")
+            # Load existing data if file exists
+            existing_data = []
+            if os.path.exists(self.reward_outputs_filename):
+                with open(self.reward_outputs_filename, "rb") as f:
+                    existing_data = pickle.load(f)
+            
+            # Combine with new data and save
             with open(self.reward_outputs_filename, "wb") as f:
-                pickle.dump(merged_outputs, f)
+                pickle.dump(existing_data + merged_outputs, f)
+                
+        self.reward_outputs = []
+        return merged_outputs
     
     def merge_policy_outputs(self, save_to_disk=True):
         # Group reward outputs by step
@@ -638,11 +652,21 @@ class GRPOTrainer(Trainer):
             }
             merged_outputs.append(merged)
 
-        self.policy_outputs = merged_outputs
+        # save and flush
         if save_to_disk:
             print(f"Saving policy outputs to {self.policy_outputs_filename}")
+            # Load existing data if file exists
+            existing_data = []
+            if os.path.exists(self.policy_outputs_filename):
+                with open(self.policy_outputs_filename, "rb") as f:
+                    existing_data = pickle.load(f)
+            
+            # Combine with new data and save
             with open(self.policy_outputs_filename, "wb") as f:
-                pickle.dump(merged_outputs, f)
+                pickle.dump(existing_data + merged_outputs, f)
+                
+        self.policy_outputs = []
+        return merged_outputs
     
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -798,17 +822,17 @@ class GRPOTrainer(Trainer):
         # # if global step is at the end of the reward record window, save the reward and policy outputs
         if self.state.global_step != 0 and self.state.global_step % self.args.reward_record_window == 0:
             print(f"Global step: {self.state.global_step} reached reward record window")
-        #     self.merge_reward_outputs()
-        #     self.merge_policy_outputs()
+            self.merge_reward_outputs()
+            self.merge_policy_outputs()
             exit()
         
         # Train the reward imputation model
         if self.state.global_step == self.start_patch and self.accelerator.is_main_process and not self.rhat_model.trained:
             print(f"Global step: {self.state.global_step} reached, train reward imputation model")
             # merge the policy and reward outputs for the past steps
-            self.merge_policy_outputs(save_to_disk=False)
-            self.merge_reward_outputs(save_to_disk=False)
-            self.rhat_model.train(self.policy_outputs, self.reward_outputs)
+            policy_outputs = self.merge_policy_outputs()
+            reward_outputs = self.merge_reward_outputs()
+            self.rhat_model.train(policy_outputs, reward_outputs)
 
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
@@ -991,13 +1015,14 @@ class GRPOTrainer(Trainer):
                     texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
                 )
                 reward_inputs = super()._prepare_inputs(reward_inputs)
+                imputed_rewards = None
                 with torch.inference_mode():
                     # get true reward first
                     # outputs.logits = outputs.score
                     outputs = reward_func(**reward_inputs)
                     true_rewards = outputs.logits[:, 0]  # Shape (B*G,) # the rewards that are fed into the objective function, so the imputed rewards should be stored in the same place
                     rewards_per_func[:, i] = true_rewards
-                    print(f"True rewards: shape: {outputs.logits[:, 0].shape}")
+                    # print(f"True rewards: shape: {outputs.logits[:, 0].shape}")
                     
                     if self.state.global_step >= self.start_patch and self.start_patch != -1:
                         # impute the rewards
@@ -1022,6 +1047,7 @@ class GRPOTrainer(Trainer):
                         "reward_detailed": outputs.rewards.cpu().float().numpy(),
                         "reward_aggregated": outputs.score[:, 0].cpu().float().numpy(),
                         "hidden_states": outputs.hidden_state.cpu().float().numpy(),
+                        "imputed_rewards": imputed_rewards.cpu().float().numpy() if imputed_rewards is not None else torch.full_like(outputs.score[:, 0], torch.nan).cpu().float().numpy(),
                     })
             else:
                 # Repeat all input columns (but "prompt" and "completion") to match the number of generations

@@ -70,6 +70,7 @@ _deps = [
     "trl @ git+https://github.com/huggingface/trl.git@69ad852e5654a77f1695eb4c608906fe0c7e8624",
     "vllm==0.7.2",
     "wandb>=0.19.1",
+    "scikit-learn==1.6.1"
 ]
 
 # this is a lookup table with items like:
@@ -91,7 +92,8 @@ extras["torch"] = deps_list("torch")
 extras["quality"] = deps_list("ruff", "isort", "flake8")
 extras["code"] = deps_list("e2b-code-interpreter", "python-dotenv")
 extras["eval"] = deps_list("math-verify")
-extras["dev"] = extras["quality"] + extras["tests"] + extras["eval"]
+extras["impute"] = deps_list("scikit-learn")
+extras["dev"] = extras["quality"] + extras["tests"] + extras["eval"] + extras["impute"]
 
 # core dependencies shared across the whole project - keep this to a bare minimum :)
 install_requires = [
@@ -112,6 +114,7 @@ install_requires = [
     deps["transformers"],
     deps["trl"],
     deps["wandb"],
+    deps["scikit-learn"],
 ]
 
 setup(
