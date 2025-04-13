@@ -539,12 +539,14 @@ class GRPOTrainer(Trainer):
                     
         # save policy outputs
         self.policy_outputs = []
-        self.policy_outputs_dir = "policy_outputs"
+        self.policy_outputs_merged = []
+        self.policy_outputs_dir = "/data/woojeong/impute/policy_outputs"
         os.makedirs(self.policy_outputs_dir, exist_ok=True)
         
         # save reward outputs
         self.reward_outputs = []
-        self.reward_outputs_dir = "reward_outputs"
+        self.reward_outputs_merged = []
+        self.reward_outputs_dir = "/data/woojeong/impute/reward_outputs"
         os.makedirs(self.reward_outputs_dir, exist_ok=True)
         # Get dimensions that are constant across all steps
         self.num_prompts_per_batch = (
@@ -553,21 +555,29 @@ class GRPOTrainer(Trainer):
             * (self.args.per_device_train_batch_size // self.args.num_generations)
         )
         self.num_generations_per_prompt = self.args.num_generations
-        policy_name = self.model.config._name_or_path.split("/")[-1]
-        reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
-        # self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
-        # self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
         self.reward_outputs_filename = os.path.join(self.reward_outputs_dir, self.args.run_name)
         self.policy_outputs_filename = os.path.join(self.policy_outputs_dir, self.args.run_name)
         
         # for reward imputation
-        self.start_patch = self.args.start_patch
-        from open_r1.impute_utils import RewardImputation
+        if isinstance(self.args.start_patch, float):
+            self.start_patch = int(self.args.start_patch * self.args.reward_record_window)
+        else:
+            self.start_patch = self.args.start_patch
+        if isinstance(self.args.start_pre_patch, float):
+            self.start_pre_patch = int(self.args.start_pre_patch * self.args.reward_record_window)
+        else:
+            self.start_pre_patch = self.args.start_pre_patch
+        if self.start_pre_patch > 0:
+            assert self.start_patch > self.start_pre_patch, f"start_patch must be greater than start_pre_patch, got {self.start_patch} and {self.start_pre_patch}"
+        from open_r1.impute_utils import RewardImputation, CorrImputation
+        self.pre_rhat_model = RewardImputation(self.start_pre_patch)
         self.rhat_model = RewardImputation(self.start_patch)
+        self.ghat_model = CorrImputation(self.start_pre_patch, self.start_patch)
         self.rho = self.args.rho
         self.impute_counter = 0
 
     def merge_reward_outputs(self, save_to_disk=True):
+        data_fields = self.reward_outputs[0].keys()
         # Group reward outputs by step
         step_to_outputs = {}
         for output in self.reward_outputs:
@@ -579,43 +589,41 @@ class GRPOTrainer(Trainer):
         # Merge outputs for each step
         merged_outputs = []
         for step, outputs in step_to_outputs.items():
-            # Find max sequence length across all batches
-            max_seq_len = max(o["input_ids"].shape[1] for o in outputs)
-            
-            # Pad and concatenate input_ids
-            padded_input_ids = []
-            for o in outputs:
-                curr_seq_len = o["input_ids"].shape[1]
-                if curr_seq_len < max_seq_len:
-                    padding = np.zeros((o["input_ids"].shape[0], max_seq_len - curr_seq_len), dtype=o["input_ids"].dtype)
-                    padded = np.concatenate([o["input_ids"], padding], axis=1)
-                else:
-                    padded = o["input_ids"]
-                padded_input_ids.append(padded)
-            input_ids = np.concatenate(padded_input_ids, axis=0)
-            
-            # Concatenate other arrays (these should have consistent shapes)
-            reward_quantiles = np.concatenate([o["reward_quantiles"] for o in outputs], axis=0)
-            reward_detailed = np.concatenate([o["reward_detailed"] for o in outputs], axis=0)
-            reward_aggregated = np.concatenate([o["reward_aggregated"] for o in outputs], axis=0)
-            hidden_states = np.concatenate([o["hidden_states"] for o in outputs], axis=0)
-            imputed_rewards = np.concatenate([o["imputed_rewards"] for o in outputs], axis=0)
-            # Reshape to (num_prompts_per_batch, num_generations_per_prompt, *)
-            merged = {
+            merged_data = {
                 "step": step,
-                "input_ids": input_ids.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
-                "reward_quantiles": reward_quantiles.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
-                "reward_detailed": reward_detailed.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
-                "reward_aggregated": reward_aggregated.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt),
-                "hidden_states": hidden_states.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1),
-                "imputed_rewards": imputed_rewards.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
             }
-            merged_outputs.append(merged)
+            for field in data_fields:
+                if field == "step":
+                    continue
+                elif field == "input_ids":
+                    # Find max sequence length across all batches
+                    max_seq_len = max(o["input_ids"].shape[1] for o in outputs)
+                    
+                    # Pad and concatenate input_ids
+                    padded_input_ids = []
+                    for o in outputs:
+                        curr_seq_len = o["input_ids"].shape[1]
+                        if curr_seq_len < max_seq_len:
+                            padding = np.zeros((o["input_ids"].shape[0], max_seq_len - curr_seq_len), dtype=o["input_ids"].dtype)
+                            padded = np.concatenate([o["input_ids"], padding], axis=1)
+                        else:
+                            padded = o["input_ids"]
+                        padded_input_ids.append(padded)
+                    data = np.concatenate(padded_input_ids, axis=0)
+                    merged_data[field] = data.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
+                elif field == "correlation":
+                    # one correlation per prompt
+                    merged_data[field] = np.concatenate([o[field] for o in outputs], axis=0)
+                else:
+                    data = np.concatenate([o[field] for o in outputs], axis=0)
+                    merged_data[field] = data.reshape(self.num_prompts_per_batch, self.num_generations_per_prompt, -1)
+            merged_outputs.append(merged_data)
             
         # save and flush
-        self.reward_outputs = merged_outputs
+        self.reward_outputs_merged.extend(merged_outputs)
         if save_to_disk:
-            print(f"Saving reward outputs to {self.reward_outputs_filename}")
+            print(f"=== Saving reward outputs to {self.reward_outputs_filename} ===")
+            print(f"Appending {len(merged_outputs)} reward outputs")
             # Load existing data if file exists
             existing_data = []
             if os.path.exists(self.reward_outputs_filename):
@@ -625,9 +633,10 @@ class GRPOTrainer(Trainer):
             # Combine with new data and save
             with open(self.reward_outputs_filename, "wb") as f:
                 pickle.dump(existing_data + merged_outputs, f)
-                
+            print(f"Saved reward outputs length: {len(existing_data) + len(merged_outputs)}")
+            print("=" * 30)
         self.reward_outputs = []
-        return merged_outputs
+        return
     
     def merge_policy_outputs(self, save_to_disk=True):
         # Group reward outputs by step
@@ -653,8 +662,10 @@ class GRPOTrainer(Trainer):
             merged_outputs.append(merged)
 
         # save and flush
+        self.policy_outputs_merged.extend(merged_outputs)
         if save_to_disk:
-            print(f"Saving policy outputs to {self.policy_outputs_filename}")
+            print(f"=== Saving policy outputs to {self.policy_outputs_filename} ===")
+            print(f"Appending {len(merged_outputs)} policy outputs")
             # Load existing data if file exists
             existing_data = []
             if os.path.exists(self.policy_outputs_filename):
@@ -664,9 +675,10 @@ class GRPOTrainer(Trainer):
             # Combine with new data and save
             with open(self.policy_outputs_filename, "wb") as f:
                 pickle.dump(existing_data + merged_outputs, f)
-                
+            print(f"Saved policy outputs length: {len(existing_data) + len(merged_outputs)}")
+            print("=" * 30)
         self.policy_outputs = []
-        return merged_outputs
+        return
     
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -826,13 +838,25 @@ class GRPOTrainer(Trainer):
             self.merge_policy_outputs()
             exit()
         
-        # Train the reward imputation model
-        if self.state.global_step == self.start_patch and self.accelerator.is_main_process and not self.rhat_model.trained:
-            print(f"Global step: {self.state.global_step} reached, train reward imputation model")
+        # pre-patching: train the reward imputation model (pre_rhat) to get correlations
+        if self.state.global_step == self.start_pre_patch and self.accelerator.is_main_process and not self.pre_rhat_model.trained:
+            print(f"Global step: {self.state.global_step} reached, train pre-patch reward regression model")
             # merge the policy and reward outputs for the past steps
-            policy_outputs = self.merge_policy_outputs()
-            reward_outputs = self.merge_reward_outputs()
-            self.rhat_model.train(policy_outputs, reward_outputs)
+            self.merge_policy_outputs()
+            self.merge_reward_outputs()
+            self.pre_rhat_model.train(self.policy_outputs_merged, self.reward_outputs_merged)
+        
+        # patching: train the correlation estimation model (ghat) and retrain the reward imputation model (rhat)
+        if self.state.global_step == self.start_patch and self.accelerator.is_main_process and not self.rhat_model.trained:
+            print(f"Global step: {self.state.global_step} reached, train reward regression model")
+            # merge the policy and reward outputs for the past steps
+            self.merge_policy_outputs()
+            self.merge_reward_outputs()
+            self.rhat_model.train(self.policy_outputs_merged, self.reward_outputs_merged)
+            if self.start_pre_patch > 0:
+                print("Train correlation estimation model")
+                assert np.isnan(self.reward_outputs_merged[self.start_pre_patch:][0]['correlation']).sum() == 0
+                self.ghat_model.train(self.policy_outputs_merged[self.start_pre_patch:], self.reward_outputs_merged[self.start_pre_patch:])
 
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
@@ -1002,6 +1026,7 @@ class GRPOTrainer(Trainer):
             completions = completions_text
 
         rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
+        rewards_per_func_true = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
         for i, (reward_func, reward_processing_class) in enumerate(
             zip(self.reward_funcs, self.reward_processing_classes)
         ):
@@ -1016,15 +1041,32 @@ class GRPOTrainer(Trainer):
                 )
                 reward_inputs = super()._prepare_inputs(reward_inputs)
                 imputed_rewards = None
+                corr_coef = None
                 with torch.inference_mode():
                     # get true reward first
                     # outputs.logits = outputs.score
                     outputs = reward_func(**reward_inputs)
                     true_rewards = outputs.logits[:, 0]  # Shape (B*G,) # the rewards that are fed into the objective function, so the imputed rewards should be stored in the same place
                     rewards_per_func[:, i] = true_rewards
+                    rewards_per_func_true[:, i] = true_rewards
                     # print(f"True rewards: shape: {outputs.logits[:, 0].shape}")
                     
-                    if self.state.global_step >= self.start_patch and self.start_patch != -1:
+                    # 0 - self.start_pre_patch: get true rewards only
+                    # self.start_pre_patch - self.start_patch: get imputed rewards using pre_rhat_model and save correlations
+                    if (self.start_pre_patch > 0 and 
+                        (self.state.global_step < self.start_patch) and
+                        (self.state.global_step >= self.start_pre_patch)
+                    ):
+                        # get imputed rewards using pre_rhat_model
+                        imputed_rewards = self.pre_rhat_model.impute(generation_hidden_states.detach().cpu().float().numpy())
+                        imputed_rewards = torch.tensor(imputed_rewards, dtype=true_rewards.dtype, device=device)
+                        
+                        # compute the correlation between the true and imputed rewards
+                        corr_coef = torch.corrcoef(torch.stack([true_rewards, imputed_rewards], dim=0))[0, 1]
+                        print(f"Correlation between true and imputed rewards: {corr_coef}")
+                        
+                    # self.start_patch - : get imputed rewards using rhat_model and use them
+                    if self.state.global_step >= self.start_patch and self.start_patch > 0:
                         # impute the rewards
                         imputed_rewards = self.rhat_model.impute(generation_hidden_states.detach().cpu().float().numpy())
                         imputed_rewards = torch.tensor(imputed_rewards, dtype=true_rewards.dtype, device=device)
@@ -1048,6 +1090,8 @@ class GRPOTrainer(Trainer):
                         "reward_aggregated": outputs.score[:, 0].cpu().float().numpy(),
                         "hidden_states": outputs.hidden_state.cpu().float().numpy(),
                         "imputed_rewards": imputed_rewards.cpu().float().numpy() if imputed_rewards is not None else torch.full_like(outputs.score[:, 0], torch.nan).cpu().float().numpy(),
+                        # make correlation a numpy array
+                        "correlation": np.array([corr_coef.item()]) if corr_coef is not None else np.array([np.nan]),
                     })
             else:
                 # Repeat all input columns (but "prompt" and "completion") to match the number of generations
@@ -1055,7 +1099,7 @@ class GRPOTrainer(Trainer):
                 reward_kwargs = {key: [example[key] for example in inputs] for key in keys}
                 output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
                 rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
-
+                rewards_per_func_true[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
         # Gather the reward per function across all processes first
         rewards_per_func = self.accelerator.gather(rewards_per_func)
 
@@ -1085,15 +1129,17 @@ class GRPOTrainer(Trainer):
         self._metrics[mode]["completion_length"].append(completion_length)
 
         reward_per_func = rewards_per_func.mean(0)
+        reward_per_func_true = rewards_per_func_true.mean(0)
         for i, reward_func in enumerate(self.reward_funcs):
             if isinstance(reward_func, nn.Module):  # Module instead of PretrainedModel for compat with compiled models
                 reward_func_name = reward_func.config._name_or_path.split("/")[-1]
             else:
                 reward_func_name = reward_func.__name__
-            self._metrics[mode][f"rewards/{reward_func_name}"].append(reward_per_func[i].item())
+            self._metrics[mode][f"used_rewards/{reward_func_name}"].append(reward_per_func[i].item())
+            self._metrics[mode][f"true_rewards/{reward_func_name}"].append(reward_per_func_true[i].item())
 
-        self._metrics[mode]["reward"].append(rewards.mean().item())
-        self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
+        self._metrics[mode]["used_reward"].append(rewards.mean().item())
+        self._metrics[mode]["used_reward_std"].append(std_grouped_rewards.mean().item())
         self._metrics[mode]["impute_counter"].append(self.impute_counter)
 
         if self.log_completions and self.state.global_step % self.args.logging_steps == 0:

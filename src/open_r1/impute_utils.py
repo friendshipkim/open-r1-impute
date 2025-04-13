@@ -7,7 +7,7 @@ class RewardImputation:
         self.model = LinearRegression()
         self.start_patch = start_patch
         self.trained = False
-    
+
     def train(self, policy_outputs, reward_outputs):
         print(f"Training reward imputation model with {len(policy_outputs)} steps")
         assert len(policy_outputs) == len(reward_outputs)
@@ -40,11 +40,10 @@ class CorrImputation:
         self.start_patch = start_patch
         self.trained = False
 
-    # 
     def train(self, policy_outputs, reward_outputs):
         print(f"Training correlation prediction model with {len(policy_outputs)} steps")
-        # assert len(policy_outputs) == len(reward_outputs)
-        # assert len(policy_outputs) == self.start_patch
+        assert len(policy_outputs) == len(reward_outputs)
+        assert len(policy_outputs) == self.start_patch - self.start_pre_patch
 
         # policy_outputs: shape (start_pre_patch, n_prompts, n_generations, policy_hidden_size)
         policy_hidden_states = np.stack([output['hidden_states'] for output in policy_outputs])
@@ -54,7 +53,7 @@ class CorrImputation:
         # correlations: shape (start_pre_patch, n_prompts, 1)
         correlations = np.stack([output['correlation'] for output in reward_outputs])
         
-        # flatten the hidden states and rewards
+        # flatten the hidden states and correlations
         policy_hidden_states_avg = policy_hidden_states_avg.reshape(-1, policy_hidden_states_avg.shape[-1])
         correlations = correlations.reshape(-1, 1)
         
@@ -65,7 +64,7 @@ class CorrImputation:
     def impute(self, hidden_states):
         if not self.trained:
             raise ValueError("Reward imputation model not trained")
-        hidden_states_avg = hidden_states_avg.mean(0)
+        hidden_states_avg = hidden_states.mean(0)
         predicted_rewards = self.model.predict(hidden_states_avg)
         return predicted_rewards[:, 0]
 

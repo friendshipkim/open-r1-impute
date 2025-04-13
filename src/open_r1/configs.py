@@ -51,11 +51,15 @@ class GRPOConfig(trl.GRPOConfig):
         metadata={"help": ("The project to store runs under.")},
     )
     reward_record_window: int = field(default=100, metadata={"help": "The number of steps to record reward outputs."})
-    start_patch: int = field(
+    start_patch: Optional[float] = field(
         default=-1,
-        metadata={"help": "Start reward imputation at this global step, -1 means no reward imputation"},
+        metadata={"help": "Start reward imputation at this step or ratio of global steps, -1 means no reward imputation"},
     )
-    rho: float = field(
+    start_pre_patch: Optional[float] = field(
+        default=-1,
+        metadata={"help": "Start reward imputation at this step or ratio of global steps, -1 means no reward imputation"},
+    )
+    rho: Optional[float] = field(
         default=-1,
         metadata={"help": "Correlation threshold for reward imputation, -1 means no reward imputation"},
     )

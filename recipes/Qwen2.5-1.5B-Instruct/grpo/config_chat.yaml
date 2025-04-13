@@ -21,7 +21,7 @@ gradient_checkpointing_kwargs:
 hub_model_id: Qwen2.5-1.5B-ultrachat-GRPO
 hub_strategy: every_save
 learning_rate: 2.0e-05
-log_completions: true
+log_completions: false
 log_level: info
 logging_first_step: true
 logging_steps: 1
@@ -32,7 +32,8 @@ max_completion_length: 1024
 max_steps: -1
 num_generations: 8
 num_train_epochs: 1
-output_dir: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-ps100-rho0
+run_name: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-ps0.4-preps0.2-rho0
+output_dir: /data/woojeong/open-r1-impute/Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-ps0.4-preps0.2-rho0
 overwrite_output_dir: true
 per_device_eval_batch_size: 32
 per_device_train_batch_size: 8
@@ -51,9 +52,10 @@ warmup_ratio: 0.1
 dataset_train_split: train_sft
 dataset_test_split: test_sft
 trust_remote_code: true
-reward_record_window: 301
+reward_record_window: 300
 # max_steps: 200
 wandb_project: reward-impute
 use_vllm: false
-start_patch: 100
+start_patch: 0.4
+start_pre_patch: 0.2
 rho: 0
