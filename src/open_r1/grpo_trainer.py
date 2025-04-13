@@ -557,8 +557,8 @@ class GRPOTrainer(Trainer):
         reward_name = self.reward_funcs[0].config._name_or_path.split("/")[-1]
         # self.reward_outputs_filename = f"{self.reward_outputs_dir}/{policy_name}_{reward_name}_window{self.args.reward_record_window}_prompt{self.num_prompts_per_batch}_gen{self.num_generations_per_prompt}_seed{self.args.seed}.pkl"
         # self.policy_outputs_filename = self.reward_outputs_filename.replace(self.reward_outputs_dir, self.policy_outputs_dir)
-        self.reward_outputs_filename = os.path.join(self.reward_outputs_dir, self.args.output_dir)
-        self.policy_outputs_filename = os.path.join(self.policy_outputs_dir, self.args.output_dir)
+        self.reward_outputs_filename = os.path.join(self.reward_outputs_dir, self.args.run_name)
+        self.policy_outputs_filename = os.path.join(self.policy_outputs_dir, self.args.run_name)
         
         # for reward imputation
         self.start_patch = self.args.start_patch
