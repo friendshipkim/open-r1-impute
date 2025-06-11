@@ -13,14 +13,6 @@ bash bash_scripts/grpo_oracle.sh
 bash bash_scripts/grpo_oracle.sh
 ```
 
-## Todo (Woojeong)
-- [x] add qrm reward
-- [x] output reward matrix
-- [ ] fix wandb logging
-
-## Todo (Kyuseong)
-- [ ] add experimental setup
-
 **Table of Contents**  
 1. [Overview](#overview)  
 2. [Plan of attack](#plan-of-attack)  
@@ -65,32 +57,26 @@ We will use the DeepSeek-R1 [tech report](https://github.com/deepseek-ai/DeepSee
 > [!CAUTION]
 > Libraries rely on CUDA 12.4. If you see errors related to segmentation faults, double check the version your system is running with `nvcc --version`.
 
-To run the code in this project, first, create a Python virtual environment using e.g. `uv`.
-To install `uv`, follow the [UV Installation Guide](https://docs.astral.sh/uv/getting-started/installation/).
-
-
 > [!NOTE]
 > As a shortcut, run `make install` to setup development libraries (spelled out below). Afterwards, if everything is setup correctly you can try out the Open-R1 models.
 
 
 ```shell
-uv venv openr1 --python 3.11 && source openr1/bin/activate && uv pip install --upgrade pip
+conda create -n rl python=3.11
+conda activate rl
+pip install --upgrade pip
 ```
 
-> [!TIP]
-> For Hugging Face cluster users, add `export UV_LINK_MODE=copy` to your `.bashrc` to suppress cache warnings from `uv`
-
-Next, install vLLM and FlashAttention:
-
+# install vllm and flashattention
 ```shell
-uv pip install vllm==0.7.2
-uv pip install setuptools && uv pip install flash-attn --no-build-isolation
+pip install vllm==0.7.2
+pip install setuptools && uv pip install flash-attn --no-build-isolation
 ```
 
 This will also install PyTorch `v2.5.1` and it is **very important** to use this version since the vLLM binaries are compiled for it. You can then install the remaining dependencies for your specific use case via `pip install -e .[LIST OF MODES]`. For most contributors, we recommend:
 
 ```shell
-GIT_LFS_SKIP_SMUDGE=1 uv pip install -e ".[dev]"
+GIT_LFS_SKIP_SMUDGE=1 pip install -e ".[dev]"
 ```
 
 Next, log into your Hugging Face and Weights and Biases accounts as follows:
