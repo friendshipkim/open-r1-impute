@@ -2,6 +2,17 @@
 
 *A fully open reproduction of DeepSeek-R1. This repo is a work in progress, let's build it together!*
 
+## Run commands
+### Oracle
+```
+bash bash_scripts/grpo_oracle.sh
+```
+
+### Impute
+```
+bash bash_scripts/grpo_oracle.sh
+```
+
 ## Todo (Woojeong)
 - [x] add qrm reward
 - [x] output reward matrix
