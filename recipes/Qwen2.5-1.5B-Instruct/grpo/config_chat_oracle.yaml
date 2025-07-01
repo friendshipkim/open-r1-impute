@@ -33,7 +33,7 @@ max_steps: -1
 num_generations: 8
 num_train_epochs: 1
 run_name: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
-output_dir: /data/woojeong/open-r1-impute/Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
+output_dir: /root/data/oracle/Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
 overwrite_output_dir: true
 per_device_eval_batch_size: 32
 per_device_train_batch_size: 8

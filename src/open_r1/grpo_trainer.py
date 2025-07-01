@@ -540,13 +540,13 @@ class GRPOTrainer(Trainer):
         # save policy outputs
         self.policy_outputs = []
         self.policy_outputs_merged = []
-        self.policy_outputs_dir = "/data/woojeong/impute/policy_outputs"
+        self.policy_outputs_dir = "/root/data/impute/policy_outputs"
         os.makedirs(self.policy_outputs_dir, exist_ok=True)
         
         # save reward outputs
         self.reward_outputs = []
         self.reward_outputs_merged = []
-        self.reward_outputs_dir = "/data/woojeong/impute/reward_outputs"
+        self.reward_outputs_dir = "/root/data/impute/reward_outputs"
         os.makedirs(self.reward_outputs_dir, exist_ok=True)
         # Get dimensions that are constant across all steps
         self.num_prompts_per_batch = (

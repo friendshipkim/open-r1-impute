@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open-R1-Impute Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .report-link {
+            display: block;
+            background-color: #3498db;
+            color: white;
+            padding: 15px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+            margin: 20px 0;
+            font-size: 1.2em;
+        }
+        .report-link:hover {
+            background-color: #2980b9;
+        }
+        .description {
+            background-color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Open-R1-Impute Model Comparison Results</h1>
+        
+        <div class="description">
+            <h2>📊 Model Evaluation Results</h2>
+            <p>This repository contains the results of comparing a trained GRPO model against a baseline model using local heuristics-based evaluation.</p>
+            <p><strong>Key Results:</strong></p>
+            <ul>
+                <li>Trained GRPO Model: 70% win rate</li>
+                <li>Baseline Model: 30% win rate</li>
+                <li>Evaluation Method: Local heuristics-based scoring</li>
+                <li>Dataset: UltraChat 200K</li>
+            </ul>
+        </div>
+        
+        <a href="local_comparison_results/local_model_comparison_ultrachat_report.html" class="report-link">
+            📈 View Detailed Comparison Report
+        </a>
+        
+        <div class="description">
+            <h3>📁 Files Available:</h3>
+            <ul>
+                <li><strong>HTML Report:</strong> Beautiful formatted report with charts and detailed analysis</li>
+                <li><strong>JSON Results:</strong> Raw evaluation data for further analysis</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html> 

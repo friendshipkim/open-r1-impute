@@ -405,3 +405,92 @@ def qrm_reward(completions, solution, **kwargs):
     """Reward function that checks if the completion is the same as the ground truth."""
     
     return
+
+def llm_as_judge_reward(completions, prompts, judge_model_name="gpt-4", **kwargs):
+    """
+    LLM-as-Judge reward function that uses an LLM to evaluate completions.
+    
+    Args:
+        completions: List of model completions
+        prompts: List of prompts
+        judge_model_name: Name of the judge model to use
+        **kwargs: Additional arguments
+    
+    Returns:
+        List of rewards from 0-1
+    """
+    try:
+        import openai
+    except ImportError:
+        print("Warning: openai package not found. Please install it with: pip install openai")
+        return [0.5] * len(completions)  # Return default scores
+    
+    def create_judgment_prompt(prompt, completion):
+        """Create a prompt for the judge LLM."""
+        return f"""You are an expert evaluator. Please rate the following response to a user query on a scale of 0-10, where 0 is completely incorrect/inappropriate and 10 is perfect.
+
+User Query: {prompt}
+
+Response: {completion}
+
+Please provide your rating (0-10) and a brief explanation:
+
+Rating:"""
+
+    def get_judgment_score(judgment_prompt):
+        """Get judgment score from the judge LLM."""
+        try:
+            client = openai.OpenAI()
+            response = client.chat.completions.create(
+                model=judge_model_name,
+                messages=[
+                    {"role": "system", "content": "You are an expert evaluator. Provide only the numerical rating (0-10) followed by a brief explanation."},
+                    {"role": "user", "content": judgment_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=100
+            )
+            
+            # Extract the numerical rating from the response
+            response_text = response.choices[0].message.content.strip()
+            # Look for a number between 0-10
+            import re
+            rating_match = re.search(r'(\d+(?:\.\d+)?)', response_text)
+            if rating_match:
+                rating = float(rating_match.group(1))
+                # Normalize to 0-1 range
+                return min(max(rating / 10.0, 0.0), 1.0)
+            else:
+                return 0.5  # Default score if parsing fails
+        except Exception as e:
+            print(f"Error getting judgment: {e}")
+            return 0.5  # Default score on error
+    
+    rewards = []
+    for prompt, completion in zip(prompts, completions):
+        if isinstance(completion, list) and len(completion) > 0:
+            completion_text = completion[0].get("content", str(completion))
+        else:
+            completion_text = str(completion)
+            
+        judgment_prompt = create_judgment_prompt(prompt, completion_text)
+        score = get_judgment_score(judgment_prompt)
+        rewards.append(score)
+    
+    return rewards
+
+
+def get_llm_as_judge_reward(judge_model_name="gpt-4"):
+    """
+    Factory function to create an LLM-as-Judge reward function with specified judge model.
+    
+    Args:
+        judge_model_name: Name of the judge model to use
+    
+    Returns:
+        LLM-as-Judge reward function
+    """
+    def llm_judge_reward(completions, prompts, **kwargs):
+        return llm_as_judge_reward(completions, prompts, judge_model_name, **kwargs)
+    
+    return llm_judge_reward

@@ -70,7 +70,7 @@ pip install --upgrade pip
 # install vllm and flashattention
 ```shell
 pip install vllm==0.7.2
-pip install setuptools && uv pip install flash-attn --no-build-isolation
+pip install setuptools && pip install flash-attn --no-build-isolation
 ```
 
 This will also install PyTorch `v2.5.1` and it is **very important** to use this version since the vLLM binaries are compiled for it. You can then install the remaining dependencies for your specific use case via `pip install -e .[LIST OF MODES]`. For most contributors, we recommend:

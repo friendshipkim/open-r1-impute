@@ -1,0 +1,175 @@
+{
+  "category_performance": {
+    "Business/Professional": {
+      "total_prompts": 8,
+      "model1_wins": 6,
+      "model2_wins": 2,
+      "ties": 0,
+      "model1_win_rate": 0.75,
+      "model2_win_rate": 0.25,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.5267804669310883,
+      "model2_avg_score": 0.46463665810872656,
+      "model1_std_score": 0.06008375727148194,
+      "model2_std_score": 0.11879090731921879,
+      "avg_score_difference": 0.0621438088223617
+    },
+    "General/Other": {
+      "total_prompts": 12,
+      "model1_wins": 7,
+      "model2_wins": 5,
+      "ties": 0,
+      "model1_win_rate": 0.5833333333333334,
+      "model2_win_rate": 0.4166666666666667,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.5472800624924868,
+      "model2_avg_score": 0.5085083341478904,
+      "model1_std_score": 0.15777482584491978,
+      "model2_std_score": 0.12826367411842704,
+      "avg_score_difference": 0.03877172834459641
+    },
+    "Creative Writing": {
+      "total_prompts": 34,
+      "model1_wins": 11,
+      "model2_wins": 23,
+      "ties": 0,
+      "model1_win_rate": 0.3235294117647059,
+      "model2_win_rate": 0.6764705882352942,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.3995439495879384,
+      "model2_avg_score": 0.431228625038556,
+      "model1_std_score": 0.12334506857364592,
+      "model2_std_score": 0.12793539520152938,
+      "avg_score_difference": -0.03168467545061765
+    },
+    "Technical/Programming": {
+      "total_prompts": 13,
+      "model1_wins": 8,
+      "model2_wins": 5,
+      "ties": 0,
+      "model1_win_rate": 0.6153846153846154,
+      "model2_win_rate": 0.38461538461538464,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.4225624358688823,
+      "model2_avg_score": 0.42767523600435936,
+      "model1_std_score": 0.09627590670439082,
+      "model2_std_score": 0.07667393628796224,
+      "avg_score_difference": -0.005112800135477047
+    },
+    "Question/Answer": {
+      "total_prompts": 7,
+      "model1_wins": 4,
+      "model2_wins": 3,
+      "ties": 0,
+      "model1_win_rate": 0.5714285714285714,
+      "model2_win_rate": 0.42857142857142855,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.5836826724826037,
+      "model2_avg_score": 0.5587864842018445,
+      "model1_std_score": 0.08076522987485268,
+      "model2_std_score": 0.07903217130277086,
+      "avg_score_difference": 0.024896188280759235
+    },
+    "Educational/Academic": {
+      "total_prompts": 10,
+      "model1_wins": 4,
+      "model2_wins": 6,
+      "ties": 0,
+      "model1_win_rate": 0.4,
+      "model2_win_rate": 0.6,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.4864214210197673,
+      "model2_avg_score": 0.47690248670526775,
+      "model1_std_score": 0.09935921788284138,
+      "model2_std_score": 0.0882209259098788,
+      "avg_score_difference": 0.009518934314499572
+    },
+    "Recipe/Cooking": {
+      "total_prompts": 7,
+      "model1_wins": 5,
+      "model2_wins": 2,
+      "ties": 0,
+      "model1_win_rate": 0.7142857142857143,
+      "model2_win_rate": 0.2857142857142857,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.4842218862593624,
+      "model2_avg_score": 0.4756729570948376,
+      "model1_std_score": 0.06095293900785446,
+      "model2_std_score": 0.040085574494501515,
+      "avg_score_difference": 0.008548929164524821
+    },
+    "Travel/Location": {
+      "total_prompts": 6,
+      "model1_wins": 1,
+      "model2_wins": 5,
+      "ties": 0,
+      "model1_win_rate": 0.16666666666666666,
+      "model2_win_rate": 0.8333333333333334,
+      "tie_rate": 0.0,
+      "model1_avg_score": 0.5050537085574942,
+      "model2_avg_score": 0.5128613699198151,
+      "model1_std_score": 0.07717237460120636,
+      "model2_std_score": 0.062075846347431136,
+      "avg_score_difference": -0.007807661362320917
+    }
+  },
+  "length_analysis": {
+    "Short (<200 chars)": {
+      "total": 27,
+      "model1_wins": 11,
+      "model2_wins": 16,
+      "model1_win_rate": 0.4074074074074074,
+      "model2_win_rate": 0.5925925925925926,
+      "avg_model1_score": 0.4693373635273496,
+      "avg_model2_score": 0.498756661976321
+    },
+    "Medium (200-500 chars)": {
+      "total": 25,
+      "model1_wins": 11,
+      "model2_wins": 14,
+      "model1_win_rate": 0.44,
+      "model2_win_rate": 0.56,
+      "avg_model1_score": 0.4610325706715953,
+      "avg_model2_score": 0.4741232105687602
+    },
+    "Long (>=500 chars)": {
+      "total": 48,
+      "model1_wins": 26,
+      "model2_wins": 22,
+      "model1_win_rate": 0.5416666666666666,
+      "model2_win_rate": 0.4583333333333333,
+      "avg_model1_score": 0.47289012225931004,
+      "avg_model2_score": 0.44264417412711515
+    }
+  },
+  "complexity_analysis": {
+    "multi_step": {
+      "total": 36,
+      "model1_wins": 17,
+      "model2_wins": 19,
+      "model1_win_rate": 0.4722222222222222,
+      "model2_win_rate": 0.5277777777777778
+    },
+    "technical_terms": {
+      "total": 7,
+      "model1_wins": 3,
+      "model2_wins": 4,
+      "model1_win_rate": 0.42857142857142855,
+      "model2_win_rate": 0.5714285714285714
+    },
+    "specific_requirements": {
+      "total": 40,
+      "model1_wins": 18,
+      "model2_wins": 22,
+      "model1_win_rate": 0.45,
+      "model2_win_rate": 0.55
+    },
+    "creative_tasks": {
+      "total": 26,
+      "model1_wins": 6,
+      "model2_wins": 20,
+      "model1_win_rate": 0.23076923076923078,
+      "model2_win_rate": 0.7692307692307693
+    }
+  }
+}
