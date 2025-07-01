@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "prompt": "This is a prompt",
+      "model1_completion": "This is a model1 completion",
+      "model2_completion": "This is a model2 completion"
+    },
+    {
+      "prompt": "This is another prompt",
+      "model1_completion": "This is another model1 completion",
+      "model2_completion": "This is another model2 completion"
+    }
+  ]
+} 
