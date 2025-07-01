@@ -8,6 +8,7 @@ import os
 import json
 import argparse
 import random
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
@@ -415,6 +416,7 @@ class ModelComparator:
             "model1_path": self.model1_path,
             "model2_path": self.model2_path,
             "judge_model": self.judge_model,
+            "api_type": getattr(self.llm_judge, 'api_type', 'unknown'),
             "analysis": analysis,
             "results": results_dict
         }
@@ -465,6 +467,8 @@ def main():
                        help="Use VLLM for faster inference (default: True)")
     parser.add_argument("--no-vllm", action="store_true",
                        help="Disable VLLM and use standard transformers inference")
+    parser.add_argument("--num-runs", type=int, default=1,
+                       help="Number of times to run the experiment (default: 1)")
     
     args = parser.parse_args()
     
@@ -488,7 +492,7 @@ def main():
         use_vllm=use_vllm
     )
     
-    # Load validation prompts based on mode
+    # Load validation prompts based on mode (ONCE - same prompts for all runs)
     if args.grpo_comparison:
         print("Running GRPO model comparison with validation prompts...")
         prompts = comparator.load_grpo_validation_prompts(num_samples=args.num_samples)
@@ -502,41 +506,76 @@ def main():
         model1_name = "Trained-GRPO"
         model2_name = "Baseline-Qwen"
     
-    print(f"Loaded {len(prompts)} validation prompts")
+    print(f"Loaded {len(prompts)} validation prompts (will be used for all {args.num_runs} runs)")
     
-    # Run comparison
-    print("Starting model comparison...")
-    results = comparator.compare_models_on_prompts(prompts, model1_name, model2_name)
-    
-    # Analyze results
-    analysis = comparator.analyze_results(results)
-    
-    # Print summary
-    comparator.print_summary(results, analysis)
-    
-    # Print sample comparisons
-    comparator.print_sample_comparisons(results, args.show_samples)
-    
-    # Save results
-    if args.grpo_comparison:
-        # Check if we're comparing oracle vs impute models
-        if "oracle" in args.model1 and "imputed" in args.model2 or "oracle" in args.model1 and "ps0.2-preps0.0-rho0" in args.model2:
-            # Extract parameters from model paths
-            # Oracle model: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.05
-            # Imputed model: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-lr2e-6-warmup0.05-ps0.2-preps0.0-rho0
-            
-            oracle_params = "lr2e-6-warmup0.05"
-            imputed_params = "lr2e-6-warmup0.05-ps0.2-preps0.0-rho0"
-            
-            output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples.json")
+    # Run multiple experiments
+    for run_num in range(1, args.num_runs + 1):
+        print(f"\n{'='*80}")
+        print(f"RUN {run_num}/{args.num_runs}")
+        print(f"{'='*80}")
+        
+        # Run comparison
+        print("Starting model comparison...")
+        results = comparator.compare_models_on_prompts(prompts, model1_name, model2_name)
+        
+        # Analyze results
+        analysis = comparator.analyze_results(results)
+        
+        # Print summary
+        comparator.print_summary(results, analysis)
+        
+        # Print sample comparisons (only for first run to avoid spam)
+        if run_num == 1:
+            comparator.print_sample_comparisons(results, args.show_samples)
+        
+        # Save results with run number
+        if args.grpo_comparison:
+            # Check if we're comparing oracle vs impute models
+            if "oracle" in args.model1 and "imputed" in args.model2 or "oracle" in args.model1 and "ps0.2-preps0.0-rho0" in args.model2:
+                # Extract parameters from model paths
+                # Oracle model: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.05
+                # Imputed model: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-lr2e-6-warmup0.05-ps0.2-preps0.0-rho0
+                
+                oracle_params = "lr2e-6-warmup0.05"
+                imputed_params = "lr2e-6-warmup0.05-ps0.2-preps0.0-rho0"
+                
+                # Check if using Claude API and append to filename
+                api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
+                
+                if args.num_runs > 1:
+                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+                else:
+                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples{api_suffix}.json")
+            else:
+                # Check if using Claude API and append to filename
+                api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
+                
+                if args.num_runs > 1:
+                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+                else:
+                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples{api_suffix}.json")
         else:
-            output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples.json")
-    else:
-        output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples.json")
+            # Check if using Claude API and append to filename
+            api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
+            
+            if args.num_runs > 1:
+                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+            else:
+                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples{api_suffix}.json")
+        
+        comparator.save_results(results, analysis, output_file)
+        
+        print(f"Run {run_num} complete! Results saved to: {output_file}")
+        
+        # Add a small delay between runs to avoid rate limiting
+        if run_num < args.num_runs:
+            print("Waiting 2 seconds before next run...")
+            time.sleep(2)
     
-    comparator.save_results(results, analysis, output_file)
-    
-    print(f"\nComparison complete! Results saved to: {args.output_dir}")
+    print(f"\n{'='*80}")
+    print(f"ALL {args.num_runs} RUNS COMPLETE!")
+    print(f"Results saved to: {args.output_dir}")
+    print(f"{'='*80}")
 
 
 if __name__ == "__main__":

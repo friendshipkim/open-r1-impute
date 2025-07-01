@@ -15,6 +15,12 @@ except ImportError:
     print("Warning: openai package not found. Please install it with: pip install openai")
     openai = None
 
+try:
+    import anthropic
+except ImportError:
+    print("Warning: anthropic package not found. Please install it with: pip install anthropic")
+    anthropic = None
+
 
 @dataclass
 class EvaluationResult:
@@ -49,18 +55,38 @@ class LLMJudgeEvaluator:
         
         Args:
             judge_model_name: Name of the judge model to use
-            api_key: OpenAI API key (if not set, will use environment variable)
+            api_key: OpenAI or Anthropic API key (if not set, will use environment variable)
         """
         self.judge_model_name = judge_model_name
+        self.api_key = api_key
         
-        if openai is None:
-            raise ImportError("openai package is required. Install with: pip install openai")
-        
-        # Initialize OpenAI client with new API format
+        # Detect API type based on key format
         if api_key:
-            self.client = openai.OpenAI(api_key=api_key)
+            if api_key.startswith("sk-ant-"):
+                self.api_type = "anthropic"
+                if anthropic is None:
+                    raise ImportError("anthropic package is required for Claude API. Install with: pip install anthropic")
+                self.client = anthropic.Anthropic(api_key=api_key)
+            else:
+                self.api_type = "openai"
+                if openai is None:
+                    raise ImportError("openai package is required. Install with: pip install openai")
+                self.client = openai.OpenAI(api_key=api_key)
         else:
-            self.client = openai.OpenAI()
+            # Try to detect from environment
+            import os
+            if os.getenv("ANTHROPIC_API_KEY"):
+                self.api_type = "anthropic"
+                if anthropic is None:
+                    raise ImportError("anthropic package is required for Claude API. Install with: pip install anthropic")
+                self.client = anthropic.Anthropic()
+            else:
+                self.api_type = "openai"
+                if openai is None:
+                    raise ImportError("openai package is required. Install with: pip install openai")
+                self.client = openai.OpenAI()
+        
+        print(f"Using {self.api_type.upper()} API with model: {self.judge_model_name}")
     
     def create_judgment_prompt(self, prompt: str, completion: str) -> str:
         """Create a prompt for the judge LLM."""
@@ -84,17 +110,27 @@ Rating:"""
         try:
             judgment_prompt = self.create_judgment_prompt(prompt, completion)
             
-            response = self.client.chat.completions.create(
-                model=self.judge_model_name,
-                messages=[
-                    {"role": "system", "content": "You are an expert evaluator. Provide only the numerical rating (0-10) followed by a brief explanation."},
-                    {"role": "user", "content": judgment_prompt}
-                ],
-                temperature=0.1,
-                max_tokens=150
-            )
-            
-            response_text = response.choices[0].message.content.strip()
+            if self.api_type == "anthropic":
+                response = self.client.messages.create(
+                    model=self.judge_model_name,
+                    max_tokens=150,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "user", "content": f"You are an expert evaluator. Provide only the numerical rating (0-10) followed by a brief explanation.\n\n{judgment_prompt}"}
+                    ]
+                )
+                response_text = response.content[0].text.strip()
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.judge_model_name,
+                    messages=[
+                        {"role": "system", "content": "You are an expert evaluator. Provide only the numerical rating (0-10) followed by a brief explanation."},
+                        {"role": "user", "content": judgment_prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=150
+                )
+                response_text = response.choices[0].message.content.strip()
             
             # Extract the numerical rating
             rating_match = re.search(r'(\d+(?:\.\d+)?)', response_text)
@@ -163,17 +199,27 @@ Format your response as:
 Winner: [A/B/tie]
 Explanation: [detailed explanation of your reasoning]"""
 
-            response = self.client.chat.completions.create(
-                model=self.judge_model_name,
-                messages=[
-                    {"role": "system", "content": "You are an expert evaluator. Be fair and objective in your comparison. Provide clear reasoning for your choice."},
-                    {"role": "user", "content": comparison_prompt}
-                ],
-                temperature=0.1,
-                max_tokens=300
-            )
-            
-            response_text = response.choices[0].message.content.strip()
+            if self.api_type == "anthropic":
+                response = self.client.messages.create(
+                    model=self.judge_model_name,
+                    max_tokens=300,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "user", "content": f"You are an expert evaluator. Be fair and objective in your comparison. Provide clear reasoning for your choice.\n\n{comparison_prompt}"}
+                    ]
+                )
+                response_text = response.content[0].text.strip()
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.judge_model_name,
+                    messages=[
+                        {"role": "system", "content": "You are an expert evaluator. Be fair and objective in your comparison. Provide clear reasoning for your choice."},
+                        {"role": "user", "content": comparison_prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=300
+                )
+                response_text = response.choices[0].message.content.strip()
             
             # Parse the response
             winner_match = re.search(r'Winner:\s*(A|B|tie)', response_text, re.IGNORECASE)
