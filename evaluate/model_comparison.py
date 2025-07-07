@@ -39,25 +39,45 @@ class ModelComparator:
     def __init__(self, 
                  model1_path: str, 
                  model2_path: str, 
-                 judge_model: str = "gpt-4", 
+                 judge_model: Optional[str] = None, 
                  api_key: Optional[str] = None,
-                 use_vllm: bool = True):
+                 use_vllm: bool = True,
+                 seed: int = 42):
         """
         Initialize the model comparator.
         
         Args:
             model1_path: Path to the first model (trained GRPO model)
             model2_path: Path to the second model (untrained baseline)
-            judge_model: Judge model to use
-            api_key: OpenAI API key
+            judge_model: Judge model to use (auto-detected if None based on API key)
+            api_key: OpenAI or Anthropic API key
             use_vllm: Whether to use VLLM for faster inference
+            seed: Random seed for reproducibility
         """
         self.model1_path = model1_path
         self.model2_path = model2_path
-        self.judge_model = judge_model
+        self.api_key = api_key
+        self.use_vllm = use_vllm and VLLM_AVAILABLE
+        self.seed = seed
+        
+        # Auto-detect API type and set appropriate judge model
+        if judge_model is None and api_key:
+            if api_key.startswith("sk-ant-"):
+                self.judge_model = "claude-3-sonnet-20240229"
+                print(f"Detected Anthropic API key, using judge model: {self.judge_model}")
+            else:
+                self.judge_model = "gpt-4"
+                print(f"Detected OpenAI API key, using judge model: {self.judge_model}")
+        else:
+            self.judge_model = judge_model or "gpt-4"
+        
         self.model1_name = "Model1"
         self.model2_name = "Model2"
-        self.use_vllm = use_vllm and VLLM_AVAILABLE
+        
+        # Set the random seed
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
         
         if self.use_vllm:
             print("Using VLLM for fast inference...")
@@ -104,7 +124,7 @@ class ModelComparator:
             )
         
         # Initialize LLM-as-Judge evaluator
-        self.llm_judge = LLMJudgeEvaluator(judge_model_name=judge_model, api_key=api_key)
+        self.llm_judge = LLMJudgeEvaluator(judge_model_name=self.judge_model, api_key=api_key)
         
         # Set up system prompt for chat format
         self.system_prompt = "You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>"
@@ -201,7 +221,7 @@ class ModelComparator:
                 dataset_split = dataset[split_name]['messages']
             
             # Randomly sample prompts
-            random.seed(42)  # For reproducibility
+            random.seed(self.seed)
             indices = random.sample(range(len(dataset_split)), min(num_samples, len(dataset_split)))
             dataset_subset = [dataset_split[i] for i in indices]
             
@@ -242,7 +262,7 @@ class ModelComparator:
                     break
         
         # Shuffle and take the specified number
-        random.seed(42)  # For reproducibility
+        random.seed(self.seed)
         random.shuffle(validation_prompts)
         validation_prompts = validation_prompts[:num_samples]
         
@@ -417,6 +437,7 @@ class ModelComparator:
             "model2_path": self.model2_path,
             "judge_model": self.judge_model,
             "api_type": getattr(self.llm_judge, 'api_type', 'unknown'),
+            "seed": self.seed,
             "analysis": analysis,
             "results": results_dict
         }
@@ -451,12 +472,12 @@ def main():
                        help="Dataset to use for validation")
     parser.add_argument("--num-samples", type=int, default=50,
                        help="Number of validation samples")
-    parser.add_argument("--judge-model", type=str, default="gpt-4",
-                       help="Judge model to use")
+    parser.add_argument("--judge-model", type=str, default=None,
+                       help="Judge model to use (auto-detected from API key if not specified)")
     parser.add_argument("--output-dir", type=str, default="comparison_results",
                        help="Output directory for results")
     parser.add_argument("--api-key", type=str, default=None,
-                       help="OpenAI API key")
+                       help="OpenAI or Anthropic API key")
     parser.add_argument("--show-samples", type=int, default=5,
                        help="Number of sample comparisons to show")
     parser.add_argument("--grpo-comparison", action="store_true",
@@ -469,6 +490,8 @@ def main():
                        help="Disable VLLM and use standard transformers inference")
     parser.add_argument("--num-runs", type=int, default=1,
                        help="Number of times to run the experiment (default: 1)")
+    parser.add_argument("--seed", type=int, default=42,
+                       help="Random seed for reproducibility")
     
     args = parser.parse_args()
     
@@ -489,7 +512,8 @@ def main():
         model2_path=args.model2,
         judge_model=args.judge_model,
         api_key=args.api_key,
-        use_vllm=use_vllm
+        use_vllm=use_vllm,
+        seed=args.seed
     )
     
     # Load validation prompts based on mode (ONCE - same prompts for all runs)
@@ -543,25 +567,25 @@ def main():
                 api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
                 
                 if args.num_runs > 1:
-                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples_seed{args.seed}{api_suffix}_loop{run_num}.json")
                 else:
-                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples{api_suffix}.json")
+                    output_file = os.path.join(args.output_dir, f"oracle_{oracle_params}_vs_imputed_{imputed_params}_comparison_{args.num_samples}samples_seed{args.seed}{api_suffix}.json")
             else:
                 # Check if using Claude API and append to filename
                 api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
                 
                 if args.num_runs > 1:
-                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples_seed{args.seed}{api_suffix}_loop{run_num}.json")
                 else:
-                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples{api_suffix}.json")
+                    output_file = os.path.join(args.output_dir, f"grpo_model_comparison_{args.evaluation_method}_{args.num_samples}samples_seed{args.seed}{api_suffix}.json")
         else:
             # Check if using Claude API and append to filename
             api_suffix = "_claude" if args.api_key and args.api_key.startswith("sk-ant-") else ""
             
             if args.num_runs > 1:
-                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples{api_suffix}_loop{run_num}.json")
+                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples_seed{args.seed}{api_suffix}_loop{run_num}.json")
             else:
-                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples{api_suffix}.json")
+                output_file = os.path.join(args.output_dir, f"model_comparison_{args.dataset}_{args.num_samples}samples_seed{args.seed}{api_suffix}.json")
         
         comparator.save_results(results, analysis, output_file)
         
