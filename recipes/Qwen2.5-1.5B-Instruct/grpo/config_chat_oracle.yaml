@@ -32,8 +32,8 @@ max_completion_length: 1024
 max_steps: -1
 num_generations: 8
 num_train_epochs: 1
-run_name: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
-output_dir: /root/data/oracle/Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
+run_name: Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts400-steps50-oracle-lr2e-6-warmup0.1
+output_dir: /root/data/oracle/Qwen2.5-1.5B-ultrachat-qrm-p16-g8-ts400-steps50-oracle-lr2e-6-warmup0.1
 overwrite_output_dir: true
 per_device_eval_batch_size: 32
 per_device_train_batch_size: 8
@@ -51,8 +51,8 @@ warmup_ratio: 0.1
 dataset_train_split: train_sft
 dataset_test_split: test_sft
 trust_remote_code: true
-save_steps: 300
-reward_record_window: 300
-max_steps: 300
+save_steps: 50
+reward_record_window: 400
+max_steps: 400
 wandb_project: reward-impute
 use_vllm: false
