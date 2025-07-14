@@ -839,7 +839,7 @@ class GRPOTrainer(Trainer):
             exit()
         
         # pre-patching: train the reward imputation model (pre_rhat) to get correlations
-        if self.state.global_step == self.start_pre_patch and self.accelerator.is_main_process and not self.pre_rhat_model.trained:
+        if self.state.global_step != 0 and self.state.global_step == self.start_pre_patch and self.accelerator.is_main_process and not self.pre_rhat_model.trained:
             print(f"Global step: {self.state.global_step} reached, train pre-patch reward regression model")
             # merge the policy and reward outputs for the past steps
             self.merge_policy_outputs()
