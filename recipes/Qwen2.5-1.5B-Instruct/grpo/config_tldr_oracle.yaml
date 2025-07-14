@@ -1,0 +1,58 @@
+# Model arguments
+model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data training arguments
+dataset_name: trl-lib/tldr
+system_prompt: "You are a helpful AI Assistant that creates brief, accurate summaries. Read the provided text and generate a concise summary in 2-3 sentences that captures the main points and key information."
+
+# GRPO trainer config
+bf16: true
+use_vllm: true
+vllm_device: auto
+vllm_gpu_memory_utilization: 0.7
+do_eval: false
+gradient_accumulation_steps: 16
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+hub_model_id: Qwen2.5-1.5B-tldr-GRPO
+hub_strategy: every_save
+learning_rate: 2.0e-06
+log_completions: false
+log_level: info
+logging_first_step: true
+logging_steps: 1
+logging_strategy: steps
+lr_scheduler_type: cosine
+max_prompt_length: 512
+max_completion_length: 1024
+max_steps: -1
+num_generations: 8
+num_train_epochs: 1
+run_name: Qwen2.5-1.5B-tldr-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
+output_dir: /root/data/oracle/Qwen2.5-1.5B-tldr-qrm-p16-g8-ts300-oracle-lr2e-6-warmup0.1
+overwrite_output_dir: true
+per_device_eval_batch_size: 32
+per_device_train_batch_size: 8
+push_to_hub: false
+report_to:
+- wandb
+reward_funcs:
+- qrm
+reward_weights:
+- 1.0
+save_strategy: "epoch"
+save_total_limit: 1
+seed: 42
+warmup_ratio: 0.1
+dataset_train_split: train
+dataset_test_split: test
+trust_remote_code: true
+save_steps: 300
+reward_record_window: 300
+max_steps: 300
+wandb_project: reward-impute
+use_vllm: false
